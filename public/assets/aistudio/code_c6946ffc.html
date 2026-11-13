@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Particle Studio — 3D Simulation & Generation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"Geist Mono"', 'monospace'],
+          },
+          colors: {
+            canvas: '#09090B',
+            panel: '#0E0E11',
+            inputbg: '#16161A',
+            dockbg: '#121215',
+            line: '#222226',
+            linehover: '#3F3F46',
+            accent: '#FF5722',
+            textpri: '#F4F4F5',
+            textsec: '#A1A1AA',
+            textmuted: '#52525B',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Technical scrollbars & reset */
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0E0E11;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #27272A;
+      border-radius: 2px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3F3F46;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      background: #222226;
+      height: 4px;
+      border-radius: 2px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: #F4F4F5;
+      cursor: ew-resize;
+      transition: background 0.15s ease, transform 0.1s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover {
+      background: #FF5722;
+      transform: scale(1.2);
+    }
+    input[type=range]:focus {
+      outline: none;
+    }
+  </style>
+</head>
+<body class="bg-canvas text-textpri font-sans antialiased overflow-hidden w-screen h-screen select-none relative">
+
+  <!-- ========================================================================= -->
+  <!-- 1. PRIMARY 3D VIEWPORT CANVAS BACKGROUND (Three.js WebGL Simulation)      -->
+  <!-- ========================================================================= -->
+  <div class="absolute inset-0 w-full h-full z-0 overflow-hidden bg-canvas">
+    <canvas id="particleCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+
+    <!-- Perspective Floor Grid (Subtle CSS/SVG perspective overlay + WebGL floor) -->
+    <div id="gridOverlay" class="absolute inset-0 pointer-events-none opacity-40 transition-opacity duration-300"
+         style="background-image: linear-gradient(to right, #18181B 1px, transparent 1px), linear-gradient(to bottom, #18181B 1px, transparent 1px); background-size: 40px 40px; mask-image: radial-gradient(circle at 50% 50%, black 20%, transparent 75%);">
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TOP-LEFT CANVAS HUD: Project Title, Telemetry & Viewport Modes           -->
+  <!-- ========================================================================= -->
+  <div class="absolute top-3 left-16 z-20 flex items-center gap-3">
+    <!-- Breadcrumb & Scene Info -->
+    <div class="flex items-center h-8 px-2.5 bg-panel/90 backdrop-blur-md border border-line rounded text-xs gap-2">
+      <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+        <polyline points="2 17 12 22 22 17"></polyline>
+        <polyline points="2 12 12 17 22 12"></polyline>
+      </svg>
+      <span class="text-textsec font-medium">ParticleStudio</span>
+      <span class="text-textmuted">/</span>
+      <span class="text-textpri font-mono font-medium tracking-tight" id="sceneTitle">Untitled_Scene_01.ptc</span>
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-1"></span>
+    </div>
+
+    <!-- Telemetry Badge (FPS, Particle Count, Compute Engine) -->
+    <div class="flex items-center h-8 px-2.5 bg-panel/90 backdrop-blur-md border border-line rounded font-mono text-[11px] tabular-nums text-textsec gap-3">
+      <div class="flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+        <span class="text-textpri font-medium" id="fpsReadout">120 FPS</span>
+      </div>
+      <div class="w-[1px] h-3.5 bg-line"></div>
+      <div class="text-textsec">
+        <span class="text-textpri font-medium" id="ptCountReadout">250,000</span> <span class="text-[10px] text-textmuted">PTS</span>
+      </div>
+      <div class="w-[1px] h-3.5 bg-line"></div>
+      <div class="text-textmuted text-[10px]">GPGPU / WEBGL2</div>
+    </div>
+
+    <!-- Viewport Shading Mode Segmented Pills -->
+    <div class="flex items-center h-8 p-0.5 bg-panel/90 backdrop-blur-md border border-line rounded text-[11px] font-mono">
+      <button onclick="setRenderMode('points', this)" class="mode-btn px-2.5 h-full rounded-[3px] bg-inputbg text-textpri border border-linehover font-medium">Points</button>
+      <button onclick="setRenderMode('links', this)" class="mode-btn px-2.5 h-full rounded-[3px] text-textsec hover:text-textpri transition-colors">Links</button>
+      <button onclick="setRenderMode('voxel', this)" class="mode-btn px-2.5 h-full rounded-[3px] text-textsec hover:text-textpri transition-colors">Voxel</button>
+      <button onclick="setRenderMode('depth', this)" class="mode-btn px-2.5 h-full rounded-[3px] text-textsec hover:text-textpri transition-colors">Depth</button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TOP-RIGHT CANVAS HUD: Viewport Gizmo, Reset & High-Contrast Export        -->
+  <!-- ========================================================================= -->
+  <div class="absolute top-3 right-[336px] z-20 flex items-center gap-2">
+    <!-- Camera view presets -->
+    <div class="flex items-center h-8 px-1 bg-panel/90 backdrop-blur-md border border-line rounded text-[11px] font-mono text-textsec gap-1">
+      <button onclick="resetCamera('front')" class="px-2 h-6 hover:bg-inputbg hover:text-textpri rounded transition-colors" title="Front View">F</button>
+      <button onclick="resetCamera('top')" class="px-2 h-6 hover:bg-inputbg hover:text-textpri rounded transition-colors" title="Top View">T</button>
+      <button onclick="resetCamera('iso')" class="px-2 h-6 hover:bg-inputbg hover:text-textpri rounded transition-colors" title="Isometric View">ISO</button>
+    </div>
+
+    <!-- Grid Toggle Button -->
+    <button onclick="toggleGrid(this)" id="gridToggleBtn" class="flex items-center justify-center h-8 w-8 bg-panel/90 backdrop-blur-md border border-line hover:border-linehover rounded text-textsec hover:text-textpri transition-colors" title="Toggle Grid Plane">
+      <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
+      </svg>
+    </button>
+
+    <!-- Reset Camera -->
+    <button onclick="resetSimulation()" class="flex items-center gap-1.5 h-8 px-2.5 bg-panel/90 backdrop-blur-md border border-line hover:border-linehover rounded text-xs font-medium text-textsec hover:text-textpri transition-colors" title="Recenter Viewport">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+      <span>Reset</span>
+    </button>
+
+    <!-- High-Contrast Primary Export/Share Button (#FAFAFA bg, #09090B text) -->
+    <button onclick="openExportModal()" class="flex items-center gap-1.5 h-8 px-3 bg-[#FAFAFA] hover:bg-white active:bg-zinc-200 text-[#09090B] font-medium text-xs rounded transition-colors shadow-sm">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      <span>Export / Share</span>
+    </button>
+  </div>
+
+  <!-- Mini 3D Axis Orientation Gizmo (Canvas overlay, top right corner of canvas) -->
+  <div class="absolute top-14 right-[336px] z-10 w-16 h-16 pointer-events-none flex items-center justify-center opacity-85">
+    <svg class="w-14 h-14" viewBox="0 0 100 100" fill="none">
+      <!-- Center origin -->
+      <circle cx="50" cy="50" r="3" fill="#52525B"/>
+      <!-- X-Axis (Red) -->
+      <line x1="50" y1="50" x2="84" y2="62" stroke="#EF4444" stroke-width="1.8"/>
+      <circle cx="84" cy="62" r="4" fill="#EF4444"/>
+      <text x="88" y="66" fill="#EF4444" font-size="9" font-family="monospace" font-weight="bold">X</text>
+      <!-- Y-Axis (Green) -->
+      <line x1="50" y1="50" x2="50" y2="14" stroke="#10B981" stroke-width="1.8"/>
+      <circle cx="50" cy="14" r="4" fill="#10B981"/>
+      <text x="54" y="16" fill="#10B981" font-size="9" font-family="monospace" font-weight="bold">Y</text>
+      <!-- Z-Axis (Blue) -->
+      <line x1="50" y1="50" x2="22" y2="72" stroke="#3B82F6" stroke-width="1.8"/>
+      <circle cx="22" cy="72" r="4" fill="#3B82F6"/>
+      <text x="12" y="77" fill="#3B82F6" font-size="9" font-family="monospace" font-weight="bold">Z</text>
+    </svg>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 4. LEFT QUICK-HISTORY & SCENE GRAPH RAIL (56px collapsed / 220px hover)  -->
+  <!-- ========================================================================= -->
+  <aside id="leftRail" class="absolute top-0 left-0 bottom-0 z-30 w-14 hover:w-56 bg-panel border-r border-line flex flex-col justify-between transition-all duration-200 ease-in-out group shadow-xl">
+    <!-- Top Branding & Navigation Icons -->
+    <div class="flex flex-col w-full">
+      <!-- Brand icon slot -->
+      <div class="h-12 border-b border-line flex items-center px-4 gap-3 text-textpri overflow-hidden">
+        <div class="w-6 h-6 flex items-center justify-center rounded bg-inputbg border border-line text-accent flex-shrink-0">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="19" cy="5" r="2"/>
+            <circle cx="5" cy="19" r="2"/>
+            <path d="M12 9V5m0 14v-4m-7-3H1m22 0h-4"/>
+          </svg>
+        </div>
+        <span class="text-xs font-semibold tracking-wider uppercase opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Scene Graph</span>
+      </div>
+
+      <!-- Quick Action Navigation -->
+      <div class="p-2 space-y-1">
+        <button onclick="selectRailItem('graph')" class="w-full flex items-center h-8 px-2 rounded bg-inputbg text-accent border border-line hover:border-linehover transition-all text-xs gap-3">
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap text-textpri font-medium">Nodes</span>
+        </button>
+
+        <button onclick="selectRailItem('history')" class="w-full flex items-center h-8 px-2 rounded hover:bg-inputbg text-textsec hover:text-textpri transition-all text-xs gap-3">
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">Keyframes (5)</span>
+        </button>
+
+        <button onclick="selectRailItem('presets')" class="w-full flex items-center h-8 px-2 rounded hover:bg-inputbg text-textsec hover:text-textpri transition-all text-xs gap-3">
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">Saved Presets</span>
+        </button>
+
+        <button onclick="selectRailItem('camera')" class="w-full flex items-center h-8 px-2 rounded hover:bg-inputbg text-textsec hover:text-textpri transition-all text-xs gap-3">
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">Cameras</span>
+        </button>
+      </div>
+
+      <!-- Divider -->
+      <div class="my-2 border-t border-line mx-2"></div>
+
+      <!-- Generation History Timeline Pills -->
+      <div class="px-2 space-y-1 overflow-hidden">
+        <div class="px-2 py-1 text-[10px] font-mono text-textmuted uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Recent Runs</div>
+        
+        <div onclick="applyMorph('sphere')" class="cursor-pointer flex items-center h-7 px-2 rounded hover:bg-inputbg text-xs gap-2 text-textpri border border-transparent hover:border-line">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0"></span>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[11px] truncate">#04 Spherical_Vortex</span>
+        </div>
+
+        <div onclick="applyMorph('qr')" class="cursor-pointer flex items-center h-7 px-2 rounded hover:bg-inputbg text-xs gap-2 text-textsec hover:text-textpri border border-transparent hover:border-line">
+          <span class="w-1.5 h-1.5 rounded-full bg-textmuted flex-shrink-0"></span>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[11px] truncate">#03 QR_Matrix_URL</span>
+        </div>
+
+        <div onclick="applyMorph('helix')" class="cursor-pointer flex items-center h-7 px-2 rounded hover:bg-inputbg text-xs gap-2 text-textsec hover:text-textpri border border-transparent hover:border-line">
+          <span class="w-1.5 h-1.5 rounded-full bg-textmuted flex-shrink-0"></span>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[11px] truncate">#02 Double_Helix_DNA</span>
+        </div>
+
+        <div onclick="applyMorph('terrain')" class="cursor-pointer flex items-center h-7 px-2 rounded hover:bg-inputbg text-xs gap-2 text-textsec hover:text-textpri border border-transparent hover:border-line">
+          <span class="w-1.5 h-1.5 rounded-full bg-textmuted flex-shrink-0"></span>
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[11px] truncate">#01 Perlin_Terrain</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Rail Shortcuts / Settings -->
+    <div class="p-2 border-t border-line space-y-1">
+      <button class="w-full flex items-center h-8 px-2 rounded hover:bg-inputbg text-textsec hover:text-textpri transition-all text-xs gap-3">
+        <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">Studio Settings</span>
+      </button>
+      <div class="h-6 flex items-center px-2 text-[10px] font-mono text-textmuted gap-2">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+        <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">v2.4.1 (Metal/GL)</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MULTI-MODAL COMMAND & INPUT DOCK (Bottom-Center Floating Bar)          -->
+  <!-- ========================================================================= -->
+  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-[680px] px-4 pointer-events-auto">
+    <!-- Mode Switcher Tabs directly attached above the dock -->
+    <div class="flex items-center justify-between mb-1.5 px-1">
+      <div class="flex items-center gap-1 bg-panel/90 backdrop-blur-md p-1 rounded-md border border-line">
+        <button onclick="switchDockMode('prompt', this)" class="dock-tab active px-2.5 py-1 text-[11px] font-medium rounded bg-inputbg text-textpri border border-linehover transition-all flex items-center gap-1.5">
+          <svg class="w-3 h-3 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span>Prompt</span>
+        </button>
+
+        <button onclick="switchDockMode('image', this)" class="dock-tab px-2.5 py-1 text-[11px] font-medium rounded text-textsec hover:text-textpri hover:bg-inputbg/60 transition-all flex items-center gap-1.5">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <span>Image / Depth</span>
+        </button>
+
+        <button onclick="switchDockMode('qr', this)" class="dock-tab px-2.5 py-1 text-[11px] font-medium rounded text-textsec hover:text-textpri hover:bg-inputbg/60 transition-all flex items-center gap-1.5">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+            <path d="M14 14h3v3h-3zM19 19h2v2h-2zM14 19h2v2h-2zM19 14h2v2h-2z"/>
+          </svg>
+          <span>QR Matrix</span>
+        </button>
+
+        <button onclick="switchDockMode('preset', this)" class="dock-tab px-2.5 py-1 text-[11px] font-medium rounded text-textsec hover:text-textpri hover:bg-inputbg/60 transition-all flex items-center gap-1.5">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+          <span>Preset Geometry</span>
+        </button>
+      </div>
+
+      <div class="text-[11px] font-mono text-textmuted flex items-center gap-1">
+        <span class="px-1.5 py-0.5 bg-panel border border-line rounded text-[10px]">⌘K</span>
+        <span>Command</span>
+      </div>
+    </div>
+
+    <!-- Structured Sharp-edged Command Bar -->
+    <div class="bg-dockbg/95 backdrop-blur-xl border border-[#27272A] rounded-lg p-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.6)] flex items-center gap-2">
+      <!-- Terminal prompt indicator / mode icon -->
+      <div id="dockIconBox" class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded bg-inputbg border border-line text-textsec">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="4 17 10 11 4 5"/>
+          <line x1="12" y1="19" x2="20" y2="19"/>
+        </svg>
+      </div>
+
+      <!-- Main Input Field (dynamic based on selected mode) -->
+      <div class="flex-1 relative flex items-center">
+        <input id="dockTextInput" type="text"
+               value="Disintegrate into aerodynamic turbulence vortex with warm orange core"
+               placeholder="Describe an object, physical scenario, or upload reference..."
+               class="w-full bg-transparent text-[13px] text-textpri placeholder:text-textmuted focus:outline-none font-sans pl-1 pr-24 py-1 tracking-tight"
+               onkeydown="if(event.key==='Enter') executeGeneration()">
+        
+        <!-- Inline Attachment Dropzone Badge / Parameter Pill -->
+        <div class="absolute right-1 flex items-center gap-1.5">
+          <label class="cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded bg-inputbg border border-line hover:border-linehover text-[11px] font-mono text-textsec hover:text-textpri transition-colors" title="Attach .png, .svg, .obj">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+            <span class="text-[10px]">.OBJ</span>
+            <input type="file" class="hidden" accept=".png,.svg,.obj" onchange="handleFileUpload(event)">
+          </label>
+
+          <div class="px-1.5 py-0.5 rounded bg-inputbg border border-line text-[10px] font-mono text-textsec">
+            Density: <span class="text-accent font-medium">High</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Crisp Solid Keyboard Shortcut Submit Button -->
+      <button onclick="executeGeneration()" id="btnGenerate" class="flex-shrink-0 flex items-center gap-1.5 h-8 px-3.5 bg-textpri hover:bg-white active:bg-zinc-200 text-canvas font-medium text-xs rounded transition-colors shadow-sm">
+        <span>Generate</span>
+        <span class="font-mono text-[10px] text-textmuted bg-zinc-200 px-1 py-0.2 rounded font-bold">↵</span>
+      </button>
+    </div>
+
+    <!-- Quick Presets Sub-bar (shows when Presets tab is clicked) -->
+    <div id="presetTray" class="hidden mt-2 p-1.5 bg-panel/90 backdrop-blur-md border border-line rounded flex items-center justify-between text-xs font-mono">
+      <div class="flex items-center gap-1">
+        <span class="text-textmuted text-[10px] px-1">QUICK MESH:</span>
+        <button onclick="applyMorph('sphere')" class="px-2 py-0.5 bg-inputbg hover:bg-line border border-line rounded text-[11px] text-textpri">Torus Sphere</button>
+        <button onclick="applyMorph('helix')" class="px-2 py-0.5 bg-inputbg hover:bg-line border border-line rounded text-[11px] text-textpri">DNA Helix</button>
+        <button onclick="applyMorph('terrain')" class="px-2 py-0.5 bg-inputbg hover:bg-line border border-line rounded text-[11px] text-textpri">Noise Terrain</button>
+        <button onclick="applyMorph('cube')" class="px-2 py-0.5 bg-inputbg hover:bg-line border border-line rounded text-[11px] text-textpri">Voxel Cube</button>
+      </div>
+      <button onclick="toggleAudioReactive()" id="audioBtn" class="flex items-center gap-1 px-2 py-0.5 text-textsec hover:text-accent border border-transparent hover:border-line rounded text-[11px]">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        </svg>
+        <span>Audio Reactive</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 3. RIGHT INSPECTOR SIDEBAR — Particle Physics & Settings (320px fixed)    -->
+  <!-- ========================================================================= -->
+  <aside class="absolute top-0 right-0 bottom-0 z-30 w-80 bg-panel border-l border-line flex flex-col justify-between overflow-hidden shadow-2xl">
+    <!-- Sidebar Header -->
+    <div class="h-12 border-b border-line px-4 flex items-center justify-between flex-shrink-0">
+      <div class="flex items-center gap-2">
+        <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 20v-6M6 20V10M18 20V4"/>
+        </svg>
+        <span class="text-xs font-semibold uppercase tracking-wider text-textpri">Inspector / Physics</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button onclick="resetAllPhysics()" class="p-1 text-textmuted hover:text-textpri transition-colors" title="Reset all to defaults">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+        </button>
+        <span class="text-[10px] font-mono px-1.5 py-0.5 bg-inputbg border border-line rounded text-textmuted">LIVE</span>
+      </div>
+    </div>
+
+    <!-- Scrollable Accordion Container (Edge-to-edge collapsible, zero nested cards) -->
+    <div class="flex-1 overflow-y-auto divide-y divide-line text-xs font-sans">
+      
+      <!-- ------------------------------------------------------------------- -->
+      <!-- SECTION A: Emission & Geometry                                       -->
+      <!-- ------------------------------------------------------------------- -->
+      <div class="accordion-item">
+        <button onclick="toggleSection('secEmission')" class="w-full h-9 px-4 flex items-center justify-between text-textpri hover:bg-inputbg/40 font-medium transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[10px] text-textmuted">01</span>
+            <span class="text-xs">Emission & Geometry</span>
+          </div>
+          <svg id="arrow-secEmission" class="w-3 h-3 text-textmuted transform transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        
+        <div id="secEmission" class="px-4 pb-4 pt-1 space-y-3.5">
+          <!-- Particle Count Scrubber + Direct Monospace Numeric Input -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5 text-textsec">
+              <label for="countSlider" class="text-[11px] font-medium">Particle Count</label>
+              <div class="flex items-center gap-1 font-mono text-[11px] text-textpri">
+                <input id="countInput" type="number" min="10000" max="1000000" step="10000" value="250000"
+                       class="w-16 h-5 px-1 bg-inputbg border border-line hover:border-linehover focus:border-accent text-right font-mono text-[11px] text-textpri tabular-nums rounded focus:outline-none"
+                       oninput="syncParticleCount(this.value)">
+                <span class="text-[10px] text-textmuted">pts</span>
+              </div>
+            </div>
+            <input id="countSlider" type="range" min="10000" max="1000000" step="10000" value="250000" class="w-full cursor-ew-resize"
+                   oninput="syncParticleCount(this.value)">
+            <div class="flex justify-between text-[9px] font-mono text-textmuted mt-1">
+              <span>10k</span>
+              <span>250k</span>
+              <span>500k</span>
+              <span>1M</span>
+            </div>
+          </div>
+
+          <!-- Distribution Mode Segmented Control -->
+          <div>
+            <label class="block text-[11px] text-textsec font-medium mb-1.5">Distribution Mode</label>
+            <div class="grid grid-cols-4 gap-1 p-0.5 bg-inputbg border border-line rounded">
+              <button onclick="setDistribution('surface', this)" class="dist-btn active py-1 text-[10px] font-mono text-center rounded bg-line text-textpri border border-linehover font-medium">Surface</button>
+              <button onclick="setDistribution('volume', this)" class="dist-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Volume</button>
+              <button onclick="setDistribution('voxel', this)" class="dist-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Voxel</button>
+              <button onclick="setDistribution('qr', this)" class="dist-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">QR</button>
+            </div>
+          </div>
+
+          <!-- Point Size & Attenuation -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5 text-textsec">
+              <label for="pointSizeSlider" class="text-[11px] font-medium">Point Size & Attenuation</label>
+              <span id="pointSizeVal" class="font-mono text-[11px] text-textpri tabular-nums">1.8px</span>
+            </div>
+            <input id="pointSizeSlider" type="range" min="0.5" max="8.0" step="0.1" value="1.8" class="w-full cursor-ew-resize"
+                   oninput="updatePointSize(this.value)">
+            <div class="flex items-center justify-between mt-2 pt-1 border-t border-line/60">
+              <span class="text-[10px] text-textmuted">Perspective Scaling</span>
+              <input type="checkbox" checked id="perspScaling" class="accent-accent cursor-pointer" onchange="togglePerspectiveScaling(this.checked)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------------------------- -->
+      <!-- SECTION B: Physics & Forces (Interactive Play Settings)              -->
+      <!-- ------------------------------------------------------------------- -->
+      <div class="accordion-item">
+        <button onclick="toggleSection('secPhysics')" class="w-full h-9 px-4 flex items-center justify-between text-textpri hover:bg-inputbg/40 font-medium transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[10px] text-textmuted">02</span>
+            <span class="text-xs">Physics & Forces</span>
+          </div>
+          <svg id="arrow-secPhysics" class="w-3 h-3 text-textmuted transform transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        <div id="secPhysics" class="px-4 pb-4 pt-1 space-y-3.5">
+          <!-- Turbulence / Curl Noise XY Controller Pad -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-[11px] text-textsec font-medium">Turbulence / Curl Noise</label>
+              <div class="font-mono text-[10px] text-textmuted">
+                Freq: <span id="freqVal" class="text-textpri">0.45</span> | Amp: <span id="ampVal" class="text-textpri">1.20</span>
+              </div>
+            </div>
+            <!-- Interactive 2D Pad -->
+            <div id="xyPad" class="relative w-full h-24 bg-inputbg border border-line rounded cursor-crosshair overflow-hidden group">
+              <!-- Grid marks -->
+              <div class="absolute inset-0 grid grid-cols-4 grid-rows-3 pointer-events-none opacity-20">
+                <div class="border-r border-b border-line"></div>
+                <div class="border-r border-b border-line"></div>
+                <div class="border-r border-b border-line"></div>
+                <div class="border-b border-line"></div>
+                <div class="border-r border-b border-line"></div>
+                <div class="border-r border-b border-line"></div>
+                <div class="border-r border-b border-line"></div>
+                <div class="border-b border-line"></div>
+              </div>
+              <!-- Target Crosshair Indicator -->
+              <div id="padCrosshair" class="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style="left: 45%; top: 40%;">
+                <div class="w-full h-full border border-accent rounded-full bg-accent/20"></div>
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-white rounded-full"></div>
+              </div>
+              <span class="absolute bottom-1 right-2 text-[9px] font-mono text-textmuted pointer-events-none">XY NOISE PAD</span>
+            </div>
+          </div>
+
+          <!-- Gravity & Wind Vector (X, Y, Z Compact Scrubbable Number Inputs) -->
+          <div>
+            <label class="block text-[11px] text-textsec font-medium mb-1.5">Gravity & Wind Vector</label>
+            <div class="grid grid-cols-3 gap-1.5 font-mono text-[11px]">
+              <div class="flex items-center bg-inputbg border border-line rounded px-1.5 py-1 focus-within:border-accent">
+                <span class="text-red-400 text-[10px] font-bold mr-1">X</span>
+                <input id="vecX" type="number" step="0.1" value="0.0" class="w-full bg-transparent text-right text-textpri focus:outline-none tabular-nums" oninput="updateVector('x', this.value)">
+              </div>
+              <div class="flex items-center bg-inputbg border border-line rounded px-1.5 py-1 focus-within:border-accent">
+                <span class="text-emerald-400 text-[10px] font-bold mr-1">Y</span>
+                <input id="vecY" type="number" step="0.1" value="-0.8" class="w-full bg-transparent text-right text-textpri focus:outline-none tabular-nums" oninput="updateVector('y', this.value)">
+              </div>
+              <div class="flex items-center bg-inputbg border border-line rounded px-1.5 py-1 focus-within:border-accent">
+                <span class="text-blue-400 text-[10px] font-bold mr-1">Z</span>
+                <input id="vecZ" type="number" step="0.1" value="0.2" class="w-full bg-transparent text-right text-textpri focus:outline-none tabular-nums" oninput="updateVector('z', this.value)">
+              </div>
+            </div>
+          </div>
+
+          <!-- Cursor Interaction Mode Toggle -->
+          <div>
+            <label class="block text-[11px] text-textsec font-medium mb-1.5">Cursor Interaction Mode</label>
+            <div class="grid grid-cols-4 gap-1 p-0.5 bg-inputbg border border-line rounded mb-2">
+              <button onclick="setInteractionMode('repel', this)" class="cur-btn active py-1 text-[10px] font-mono text-center rounded bg-line text-textpri border border-linehover font-medium">Repel</button>
+              <button onclick="setInteractionMode('attract', this)" class="cur-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Attract</button>
+              <button onclick="setInteractionMode('vortex', this)" class="cur-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Vortex</button>
+              <button onclick="setInteractionMode('shatter', this)" class="cur-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Shatter</button>
+            </div>
+            <!-- Radius & Stiffness Dual Sliders -->
+            <div class="space-y-2 pt-1">
+              <div>
+                <div class="flex justify-between text-[10px] font-mono text-textsec mb-1">
+                  <span>Interaction Radius</span>
+                  <span id="radiusVal" class="text-textpri tabular-nums">140px</span>
+                </div>
+                <input type="range" min="20" max="400" value="140" class="w-full" oninput="document.getElementById('radiusVal').innerText = this.value + 'px'; params.interactionRadius = parseFloat(this.value);">
+              </div>
+              <div>
+                <div class="flex justify-between text-[10px] font-mono text-textsec mb-1">
+                  <span>Spring Stiffness / Damping</span>
+                  <span id="stiffnessVal" class="text-textpri tabular-nums">0.72</span>
+                </div>
+                <input type="range" min="0.05" max="1.0" step="0.01" value="0.72" class="w-full" oninput="document.getElementById('stiffnessVal').innerText = parseFloat(this.value).toFixed(2); params.springStiffness = parseFloat(this.value);">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------------------------- -->
+      <!-- SECTION C: Shaders & Color Mapping                                  -->
+      <!-- ------------------------------------------------------------------- -->
+      <div class="accordion-item">
+        <button onclick="toggleSection('secShaders')" class="w-full h-9 px-4 flex items-center justify-between text-textpri hover:bg-inputbg/40 font-medium transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[10px] text-textmuted">03</span>
+            <span class="text-xs">Shaders & Color Mapping</span>
+          </div>
+          <svg id="arrow-secShaders" class="w-3 h-3 text-textmuted transform transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        <div id="secShaders" class="px-4 pb-4 pt-1 space-y-3.5">
+          <!-- Color Mode Dropdown -->
+          <div>
+            <label class="block text-[11px] text-textsec font-medium mb-1.5">Color Mode</label>
+            <select id="colorModeSelect" onchange="setColorMode(this.value)"
+                    class="w-full h-7 px-2 bg-inputbg border border-line hover:border-linehover focus:border-accent text-textpri text-xs rounded focus:outline-none font-sans cursor-pointer">
+              <option value="velocity">Velocity Ramp (Thermal)</option>
+              <option value="depth">Depth Gradient (Z-Buffer)</option>
+              <option value="image">Source Image RGB</option>
+              <option value="mono" selected>Monochrome + International Orange</option>
+            </select>
+          </div>
+
+          <!-- Color Stops (Horizontal Gradient Ramp Bar with Draggable Stops) -->
+          <div>
+            <div class="flex justify-between text-[11px] text-textsec font-medium mb-1.5">
+              <span>Color Gradient Ramp</span>
+              <span class="font-mono text-[10px] text-accent">#FF5722 Active</span>
+            </div>
+            <!-- Gradient Preview Strip -->
+            <div class="relative w-full h-6 rounded border border-line overflow-hidden p-0.5 bg-inputbg">
+              <div id="gradientBar" class="w-full h-full rounded-[2px]" style="background: linear-gradient(90deg, #FFFFFF 0%, #A1A1AA 45%, #FF5722 85%, #E64A19 100%);"></div>
+            </div>
+            <!-- Stop markers indication -->
+            <div class="flex justify-between text-[9px] font-mono text-textmuted mt-1 px-1">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-white border border-line"></span> #FFFFFF</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#A1A1AA]"></span> #A1A1AA</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#FF5722]"></span> #FF5722</span>
+            </div>
+          </div>
+
+          <!-- Blend Mode & Motion Trails / Bloom -->
+          <div class="space-y-2">
+            <div>
+              <label class="block text-[11px] text-textsec font-medium mb-1.5">Blend Mode</label>
+              <div class="grid grid-cols-3 gap-1 p-0.5 bg-inputbg border border-line rounded">
+                <button onclick="setBlendMode('additive', this)" class="blend-btn active py-1 text-[10px] font-mono text-center rounded bg-line text-textpri border border-linehover font-medium">Additive</button>
+                <button onclick="setBlendMode('normal', this)" class="blend-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Normal</button>
+                <button onclick="setBlendMode('multiply', this)" class="blend-btn py-1 text-[10px] font-mono text-center rounded text-textsec hover:text-textpri transition-colors">Multiply</button>
+              </div>
+            </div>
+
+            <div class="pt-1">
+              <div class="flex justify-between text-[10px] font-mono text-textsec mb-1">
+                <span>Motion Trails / Decay</span>
+                <span id="trailsVal" class="text-textpri tabular-nums">0.88</span>
+              </div>
+              <input type="range" min="0.1" max="0.99" step="0.01" value="0.88" class="w-full" oninput="document.getElementById('trailsVal').innerText = parseFloat(this.value).toFixed(2); params.decay = parseFloat(this.value);">
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[10px] font-mono text-textsec mb-1">
+                <span>Bloom Intensity</span>
+                <span id="bloomVal" class="text-textpri tabular-nums">0.35</span>
+              </div>
+              <input type="range" min="0.0" max="1.5" step="0.05" value="0.35" class="w-full" oninput="document.getElementById('bloomVal').innerText = parseFloat(this.value).toFixed(2); params.bloom = parseFloat(this.value);">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------------------------- -->
+      <!-- SECTION D: QR / Image Mapping Rules (Contextual Section)             -->
+      <!-- ------------------------------------------------------------------- -->
+      <div class="accordion-item">
+        <button onclick="toggleSection('secQR')" class="w-full h-9 px-4 flex items-center justify-between text-textpri hover:bg-inputbg/40 font-medium transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[10px] text-textmuted">04</span>
+            <span class="text-xs">QR & Matrix Mapping</span>
+          </div>
+          <svg id="arrow-secQR" class="w-3 h-3 text-textmuted transform transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        <div id="secQR" class="px-4 pb-4 pt-1 space-y-3.5">
+          <!-- Extrusion Depth (Z-Displacement) -->
+          <div>
+            <div class="flex justify-between text-[11px] text-textsec font-medium mb-1">
+              <label for="zDispSlider">Z-Displacement Depth</label>
+              <span id="zDispVal" class="font-mono text-[11px] text-textpri tabular-nums">42.0 mm</span>
+            </div>
+            <input id="zDispSlider" type="range" min="0" max="100" step="1" value="42" class="w-full"
+                   oninput="document.getElementById('zDispVal').innerText = this.value + '.0 mm'; params.zDisplacement = parseFloat(this.value);">
+          </div>
+
+          <!-- QR Error Correction Level -->
+          <div>
+            <label class="block text-[11px] text-textsec font-medium mb-1.5">QR Error Correction</label>
+            <div class="grid grid-cols-4 gap-1 p-0.5 bg-inputbg border border-line rounded font-mono text-[10px]">
+              <button onclick="setQRError('L', this)" class="qr-btn py-1 rounded text-textsec hover:text-textpri">L (7%)</button>
+              <button onclick="setQRError('M', this)" class="qr-btn py-1 rounded text-textsec hover:text-textpri">M (15%)</button>
+              <button onclick="setQRError('Q', this)" class="qr-btn active py-1 rounded bg-line text-textpri border border-linehover font-medium">Q (25%)</button>
+              <button onclick="setQRError('H', this)" class="qr-btn py-1 rounded text-textsec hover:text-textpri">H (30%)</button>
+            </div>
+          </div>
+
+          <!-- Snap-to-Scannable View Camera Button -->
+          <div class="pt-1">
+            <button onclick="snapToScannableView()" class="w-full h-8 px-3 bg-inputbg hover:bg-line border border-line hover:border-linehover rounded text-xs font-medium text-textpri flex items-center justify-center gap-2 transition-colors">
+              <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01"/>
+              </svg>
+              <span>Snap Ortho (Scannable View)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sidebar Bottom Status Footer -->
+    <div class="h-10 border-t border-line px-4 flex items-center justify-between font-mono text-[10px] text-textmuted bg-panel flex-shrink-0">
+      <div class="flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+        <span>SHADERS OK</span>
+      </div>
+      <div>BUFFER: 4.8 MB</div>
+    </div>
+  </aside>
+
+  <!-- ========================================================================= -->
+  <!-- EXPORT MODAL DIALOG (High Precision CAD style, hidden by default)          -->
+  <!-- ========================================================================= -->
+  <div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="w-[460px] bg-panel border border-linehover rounded-lg shadow-2xl overflow-hidden font-sans">
+      <div class="h-11 px-4 border-b border-line flex items-center justify-between">
+        <span class="text-xs font-semibold text-textpri uppercase tracking-wider">Export Scene / Assets</span>
+        <button onclick="closeExportModal()" class="text-textmuted hover:text-textpri text-lg">&times;</button>
+      </div>
+      <div class="p-4 space-y-3.5 text-xs">
+        <div>
+          <label class="block text-textsec text-[11px] font-medium mb-1.5">Format Target</label>
+          <div class="grid grid-cols-3 gap-2 font-mono text-[11px]">
+            <label class="flex items-center gap-2 p-2 bg-inputbg border border-linehover rounded cursor-pointer">
+              <input type="radio" name="exportFmt" checked class="accent-accent">
+              <span class="text-textpri font-medium">PLY Point Cloud</span>
+            </label>
+            <label class="flex items-center gap-2 p-2 bg-inputbg border border-line rounded cursor-pointer">
+              <input type="radio" name="exportFmt" class="accent-accent">
+              <span class="text-textsec">GLTF 2.0</span>
+            </label>
+            <label class="flex items-center gap-2 p-2 bg-inputbg border border-line rounded cursor-pointer">
+              <input type="radio" name="exportFmt" class="accent-accent">
+              <span class="text-textsec">XYZ Matrix</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-textsec text-[11px] font-medium mb-1">Color Data Inclusion</label>
+          <div class="flex items-center justify-between p-2 bg-inputbg border border-line rounded text-[11px]">
+            <span class="text-textsec">Embed vertex RGB + normal vectors</span>
+            <input type="checkbox" checked class="accent-accent">
+          </div>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2 border-t border-line">
+          <button onclick="closeExportModal()" class="px-3 py-1.5 rounded bg-inputbg hover:bg-line text-textsec text-xs">Cancel</button>
+          <button onclick="confirmExport()" class="px-4 py-1.5 rounded bg-[#FAFAFA] hover:bg-white text-canvas font-medium text-xs">Download Package</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast (Crisp technical banner) -->
+  <div id="studioToast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 hidden bg-panel border border-accent/80 text-textpri px-3 py-1.5 rounded shadow-lg font-mono text-xs flex items-center gap-2">
+    <span class="w-1.5 h-1.5 rounded-full bg-accent animate-ping"></span>
+    <span id="toastMsg">Scene updated successfully.</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 5. INTERACTIVE 3D SIMULATION ENGINE (Three.js WebGL in Vanilla JS)        -->
+  <!-- ========================================================================= -->
+  <!-- Load Three.js safely from reliable cdn -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+    // Studio State & Parameters
+    const params = {
+      count: 250000,
+      renderCount: 75000, // active displayed point budget for 120fps smoothness
+      pointSize: 1.8,
+      mode: 'points',
+      distribution: 'surface',
+      curlFreq: 0.45,
+      curlAmp: 1.20,
+      interactionMode: 'repel',
+      interactionRadius: 140,
+      springStiffness: 0.72,
+      decay: 0.88,
+      bloom: 0.35,
+      zDisplacement: 42.0,
+      colorMode: 'mono',
+      gravity: { x: 0.0, y: -0.8, z: 0.2 },
+      currentShape: 'sphere'
+    };
+
+    // Three.js Core Variables
+    let scene, camera, renderer, particleGeometry, particleMaterial, particleSystem;
+    let originalPositions = [];
+    let currentPositions = [];
+    let targetPositions = [];
+    let velocities = [];
+    let colors = [];
+    let mouse3D = new THREE.Vector3(0, 0, 0);
+    let raycaster = new THREE.Raycaster();
+    let plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    let isMouseDown = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    let cameraTarget = new THREE.Vector3(0, 0, 0);
+    let cameraAngle = { theta: 0.7, phi: 1.1, radius: 450 };
+
+    // Setup & Initialize
+    function initThree() {
+      const container = document.getElementById('particleCanvas');
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      // 1. Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color('#09090B');
+
+      // 2. Camera
+      camera = new THREE.PerspectiveCamera(50, width / height, 1, 2000);
+      updateCameraPosition();
+
+      // 3. Renderer with high performance flags
+      renderer = new THREE.WebGLRenderer({
+        canvas: container,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(width, height);
+
+      // 4. Generate Initial Geometry Formations (Spherical Particle Core)
+      createParticleCloud(params.currentShape);
+
+      // 5. Event Listeners for Orbit & Canvas interactions
+      window.addEventListener('resize', onWindowResize);
+      setupCanvasInteractions(container);
+      setupPadInteraction();
+
+      // Start Simulation Loop
+      requestAnimationFrame(animate);
+    }
+
+    // Helper: Compute spherical distribution
+    function generateSpherePoints(n, radius) {
+      const pts = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const u = Math.random();
+        const v = Math.random();
+        const theta = u * 2.0 * Math.PI;
+        const phi = Math.acos(2.0 * v - 1.0);
+        const r = Math.cbrt(Math.random()) * radius;
+        const sinPhi = Math.sin(phi);
+        pts[i * 3] = r * sinPhi * Math.cos(theta);
+        pts[i * 3 + 1] = r * sinPhi * Math.sin(theta);
+        pts[i * 3 + 2] = r * Math.cos(phi);
+      }
+      return pts;
+    }
+
+    // Helper: Compute DNA Double Helix
+    function generateHelixPoints(n, radius) {
+      const pts = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const strand = Math.random() > 0.5 ? 0 : Math.PI;
+        const t = (Math.random() - 0.5) * 500;
+        const angle = t * 0.04 + strand;
+        const jitter = (Math.random() - 0.5) * 12;
+        pts[i * 3] = Math.cos(angle) * (radius * 0.5) + jitter;
+        pts[i * 3 + 1] = t;
+        pts[i * 3 + 2] = Math.sin(angle) * (radius * 0.5) + jitter;
+      }
+      return pts;
+    }
+
+    // Helper: Compute QR Matrix Particle Grid
+    function generateQRPoints(n, size) {
+      const pts = new Float32Array(n * 3);
+      const gridSize = 45;
+      const step = size / gridSize;
+      for (let i = 0; i < n; i++) {
+        // pseudo QR code pattern with 3 anchor corner squares
+        const gx = Math.floor(Math.random() * gridSize);
+        const gy = Math.floor(Math.random() * gridSize);
+        let active = Math.random() > 0.55;
+
+        // Check if within 3 corner finder patterns
+        const isCorner1 = gx < 8 && gy < 8;
+        const isCorner2 = gx > gridSize - 9 && gy < 8;
+        const isCorner3 = gx < 8 && gy > gridSize - 9;
+        if (isCorner1 || isCorner2 || isCorner3) {
+          active = true;
+        }
+
+        const zDisp = active ? (Math.random() * params.zDisplacement) : 0;
+        pts[i * 3] = (gx - gridSize / 2) * step + (Math.random() - 0.5) * 2;
+        pts[i * 3 + 1] = (gy - gridSize / 2) * step + (Math.random() - 0.5) * 2;
+        pts[i * 3 + 2] = zDisp;
+      }
+      return pts;
+    }
+
+    // Helper: Compute Perlin-like Terrain
+    function generateTerrainPoints(n, size) {
+      const pts = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const x = (Math.random() - 0.5) * size;
+        const z = (Math.random() - 0.5) * size;
+        const y = Math.sin(x * 0.02) * Math.cos(z * 0.02) * 45 + Math.sin(x * 0.05) * 15;
+        pts[i * 3] = x;
+        pts[i * 3 + 1] = y;
+        pts[i * 3 + 2] = z;
+      }
+      return pts;
+    }
+
+    // Helper: Compute Voxel Cube
+    function generateCubePoints(n, size) {
+      const pts = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        pts[i * 3] = (Math.random() - 0.5) * size;
+        pts[i * 3 + 1] = (Math.random() - 0.5) * size;
+        pts[i * 3 + 2] = (Math.random() - 0.5) * size;
+      }
+      return pts;
+    }
+
+    // Create & Configure Particle Cloud System
+    function createParticleCloud(shape) {
+      if (particleSystem) {
+        scene.remove(particleSystem);
+        particleGeometry.dispose();
+        particleMaterial.dispose();
+      }
+
+      const count = params.renderCount;
+      let targetPts;
+      if (shape === 'helix') targetPts = generateHelixPoints(count, 140);
+      else if (shape === 'qr') targetPts = generateQRPoints(count, 220);
+      else if (shape === 'terrain') targetPts = generateTerrainPoints(count, 320);
+      else if (shape === 'cube') targetPts = generateCubePoints(count, 180);
+      else targetPts = generateSpherePoints(count, 140);
+
+      currentPositions = new Float32Array(count * 3);
+      targetPositions = targetPts;
+      originalPositions = new Float32Array(targetPts);
+      velocities = new Float32Array(count * 3);
+      colors = new Float32Array(count * 3);
+
+      for (let i = 0; i < count; i++) {
+        currentPositions[i * 3] = targetPositions[i * 3];
+        currentPositions[i * 3 + 1] = targetPositions[i * 3 + 1];
+        currentPositions[i * 3 + 2] = targetPositions[i * 3 + 2];
+
+        velocities[i * 3] = 0;
+        velocities[i * 3 + 1] = 0;
+        velocities[i * 3 + 2] = 0;
+
+        // Color mapping default: Monochrome white to international orange core
+        const dist = Math.sqrt(
+          currentPositions[i * 3] * currentPositions[i * 3] +
+          currentPositions[i * 3 + 1] * currentPositions[i * 3 + 1] +
+          currentPositions[i * 3 + 2] * currentPositions[i * 3 + 2]
+        );
+        const norm = Math.min(dist / 140, 1.0);
+        if (norm < 0.35) {
+          // Orange core (#FF5722)
+          colors[i * 3] = 1.0;
+          colors[i * 3 + 1] = 0.34;
+          colors[i * 3 + 2] = 0.13;
+        } else if (norm < 0.7) {
+          // Light neutral (#A1A1AA)
+          colors[i * 3] = 0.63;
+          colors[i * 3 + 1] = 0.63;
+          colors[i * 3 + 2] = 0.67;
+        } else {
+          // High contrast white (#FFFFFF)
+          colors[i * 3] = 0.96;
+          colors[i * 3 + 1] = 0.96;
+          colors[i * 3 + 2] = 0.96;
+        }
+      }
+
+      particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
+      particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      // Circular high-precision particle texture sprite
+      const canvasSprite = document.createElement('canvas');
+      canvasSprite.width = 32;
+      canvasSprite.height = 32;
+      const ctx = canvasSprite.getContext('2d');
+      const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.3, 'rgba(255,255,255,0.85)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 32, 32);
+      const spriteTexture = new THREE.CanvasTexture(canvasSprite);
+
+      particleMaterial = new THREE.PointsMaterial({
+        size: params.pointSize,
+        vertexColors: true,
+        map: spriteTexture,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true
+      });
+
+      particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+      scene.add(particleSystem);
+    }
+
+    // Camera positioning via spherical coordinates
+    function updateCameraPosition() {
+      camera.position.x = cameraTarget.x + cameraAngle.radius * Math.sin(cameraAngle.phi) * Math.sin(cameraAngle.theta);
+      camera.position.y = cameraTarget.y + cameraAngle.radius * Math.cos(cameraAngle.phi);
+      camera.position.z = cameraTarget.z + cameraAngle.radius * Math.sin(cameraAngle.phi) * Math.cos(cameraAngle.theta);
+      camera.lookAt(cameraTarget);
+    }
+
+    // Setup viewport mouse controls (orbit and cursor physics repulsion)
+    function setupCanvasInteractions(canvas) {
+      canvas.addEventListener('mousedown', (e) => {
+        isMouseDown = true;
+        previousMousePosition = { x: e.clientX, y: e.clientY };
+      });
+
+      window.addEventListener('mouseup', () => {
+        isMouseDown = false;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        // 1. Orbit Camera if dragging
+        if (isMouseDown) {
+          const deltaX = e.clientX - previousMousePosition.x;
+          const deltaY = e.clientY - previousMousePosition.y;
+
+          cameraAngle.theta -= deltaX * 0.006;
+          cameraAngle.phi -= deltaY * 0.006;
+          cameraAngle.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cameraAngle.phi));
+
+          updateCameraPosition();
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
+
+        // 2. Project Cursor Ray for Physics Repel / Attract
+        const rect = canvas.getBoundingClientRect();
+        const normX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const normY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera({ x: normX, y: normY }, camera);
+        const intersectPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, intersectPoint);
+        if (intersectPoint) {
+          mouse3D.copy(intersectPoint);
+        }
+      });
+
+      // Zoom via wheel
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        cameraAngle.radius += e.deltaY * 0.4;
+        cameraAngle.radius = Math.max(100, Math.min(1200, cameraAngle.radius));
+        updateCameraPosition();
+      }, { passive: false });
+    }
+
+    // Setup XY Noise Pad Interaction
+    function setupPadInteraction() {
+      const pad = document.getElementById('xyPad');
+      const crosshair = document.getElementById('padCrosshair');
+      let draggingPad = false;
+
+      function updatePad(e) {
+        const rect = pad.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+        crosshair.style.left = `${(x / rect.width) * 100}%`;
+        crosshair.style.top = `${(y / rect.height) * 100}%`;
+
+        params.curlFreq = (x / rect.width) * 1.5;
+        params.curlAmp = ((rect.height - y) / rect.height) * 3.0;
+
+        document.getElementById('freqVal').innerText = params.curlFreq.toFixed(2);
+        document.getElementById('ampVal').innerText = params.curlAmp.toFixed(2);
+      }
+
+      pad.addEventListener('mousedown', (e) => {
+        draggingPad = true;
+        updatePad(e);
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (draggingPad) updatePad(e);
+      });
+
+      window.addEventListener('mouseup', () => {
+        draggingPad = false;
+      });
+    }
+
+    // Resize Handler
+    function onWindowResize() {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
+
+    // Main 120 FPS Physics & Animation Loop
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fpsTimer = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min((now - lastTime) / 1000, 0.033);
+      lastTime = now;
+
+      // Telemetry calculation
+      frameCount++;
+      fpsTimer += dt;
+      if (fpsTimer >= 0.5) {
+        const currentFPS = Math.round(frameCount / fpsTimer);
+        document.getElementById('fpsReadout').innerText = `${currentFPS} FPS`;
+        frameCount = 0;
+        fpsTimer = 0;
+      }
+
+      // Physics compute iteration
+      if (particleGeometry && particleGeometry.attributes.position) {
+        const pos = particleGeometry.attributes.position.array;
+        const count = params.renderCount;
+        const time = now * 0.001;
+        const radiusSq = params.interactionRadius * params.interactionRadius;
+        const stiffness = params.springStiffness;
+        const decay = params.decay;
+
+        for (let i = 0; i < count; i++) {
+          const idx = i * 3;
+          let px = pos[idx];
+          let py = pos[idx + 1];
+          let pz = pos[idx + 2];
+
+          // Target return spring force
+          const tx = targetPositions[idx];
+          const ty = targetPositions[idx + 1];
+          const tz = targetPositions[idx + 2];
+
+          let fx = (tx - px) * stiffness * 0.05;
+          let fy = (ty - py) * stiffness * 0.05;
+          let fz = (tz - pz) * stiffness * 0.05;
+
+          // Turbulence / Curl Noise approximation
+          if (params.curlAmp > 0.01) {
+            const freq = params.curlFreq * 0.05;
+            const amp = params.curlAmp * 0.35;
+            fx += Math.sin(py * freq + time) * amp;
+            fy += Math.cos(pz * freq + time) * amp;
+            fz += Math.sin(px * freq + time) * amp;
+          }
+
+          // Cursor interactive force
+          const dx = px - mouse3D.x;
+          const dy = py - mouse3D.y;
+          const dz = pz - mouse3D.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+
+          if (d2 < radiusSq && d2 > 0.1) {
+            const force = (1.0 - Math.sqrt(d2) / params.interactionRadius) * 8.0;
+            if (params.interactionMode === 'repel') {
+              fx += (dx / Math.sqrt(d2)) * force * 4.0;
+              fy += (dy / Math.sqrt(d2)) * force * 4.0;
+              fz += (dz / Math.sqrt(d2)) * force * 4.0;
+            } else if (params.interactionMode === 'attract') {
+              fx -= (dx / Math.sqrt(d2)) * force * 3.0;
+              fy -= (dy / Math.sqrt(d2)) * force * 3.0;
+              fz -= (dz / Math.sqrt(d2)) * force * 3.0;
+            } else if (params.interactionMode === 'vortex') {
+              fx += -dy * force * 0.06;
+              fy += dx * force * 0.06;
+            } else if (params.interactionMode === 'shatter') {
+              fx += (Math.random() - 0.5) * force * 15.0;
+              fy += (Math.random() - 0.5) * force * 15.0;
+              fz += (Math.random() - 0.5) * force * 15.0;
+            }
+          }
+
+          // Apply Gravity vector
+          fx += params.gravity.x * 0.05;
+          fy += params.gravity.y * 0.05;
+          fz += params.gravity.z * 0.05;
+
+          // Integrate velocities
+          velocities[idx] = (velocities[idx] + fx) * decay;
+          velocities[idx + 1] = (velocities[idx + 1] + fy) * decay;
+          velocities[idx + 2] = (velocities[idx + 2] + fz) * decay;
+
+          pos[idx] += velocities[idx];
+          pos[idx + 1] += velocities[idx + 1];
+          pos[idx + 2] += velocities[idx + 2];
+        }
+
+        particleGeometry.attributes.position.needsUpdate = true;
+      }
+
+      // Gentle auto-rotation
+      if (particleSystem) {
+        particleSystem.rotation.y += 0.0012;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    // Morph State Transitions
+    function applyMorph(shapeName) {
+      params.currentShape = shapeName;
+      let newPts;
+      const count = params.renderCount;
+
+      if (shapeName === 'helix') newPts = generateHelixPoints(count, 140);
+      else if (shapeName === 'qr') newPts = generateQRPoints(count, 220);
+      else if (shapeName === 'terrain') newPts = generateTerrainPoints(count, 320);
+      else if (shapeName === 'cube') newPts = generateCubePoints(count, 180);
+      else newPts = generateSpherePoints(count, 140);
+
+      targetPositions = newPts;
+      showToast(`Morphed target formation to [${shapeName.toUpperCase()}]`);
+
+      // Update scene title
+      document.getElementById('sceneTitle').innerText = `${shapeName.charAt(0).toUpperCase() + shapeName.slice(1)}_Simulation_01.ptc`;
+    }
+
+    // UI Control Integrations
+    function syncParticleCount(val) {
+      val = parseInt(val);
+      document.getElementById('countSlider').value = val;
+      document.getElementById('countInput').value = val;
+      document.getElementById('ptCountReadout').innerText = Number(val).toLocaleString();
+      params.count = val;
+      // re-budget render points dynamically
+      params.renderCount = Math.min(val, 100000);
+      createParticleCloud(params.currentShape);
+    }
+
+    function updatePointSize(val) {
+      val = parseFloat(val);
+      document.getElementById('pointSizeVal').innerText = val.toFixed(1) + 'px';
+      params.pointSize = val;
+      if (particleMaterial) particleMaterial.size = val;
+    }
+
+    function togglePerspectiveScaling(checked) {
+      if (particleMaterial) particleMaterial.sizeAttenuation = checked;
+    }
+
+    function setDistribution(mode, btn) {
+      document.querySelectorAll('.dist-btn').forEach(b => {
+        b.classList.remove('active', 'bg-line', 'text-textpri', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('active', 'bg-line', 'text-textpri', 'border-linehover');
+      btn.classList.remove('text-textsec');
+      params.distribution = mode;
+
+      if (mode === 'qr') applyMorph('qr');
+      else if (mode === 'voxel') applyMorph('cube');
+      else if (mode === 'volume') applyMorph('sphere');
+      else applyMorph('terrain');
+    }
+
+    function setInteractionMode(mode, btn) {
+      document.querySelectorAll('.cur-btn').forEach(b => {
+        b.classList.remove('active', 'bg-line', 'text-textpri', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('active', 'bg-line', 'text-textpri', 'border-linehover');
+      btn.classList.remove('text-textsec');
+      params.interactionMode = mode;
+      showToast(`Cursor Force: ${mode.toUpperCase()}`);
+    }
+
+    function updateVector(axis, val) {
+      params.gravity[axis] = parseFloat(val) || 0;
+    }
+
+    function setColorMode(mode) {
+      params.colorMode = mode;
+      const count = params.renderCount;
+      const col = particleGeometry.attributes.color.array;
+      const pos = particleGeometry.attributes.position.array;
+
+      for (let i = 0; i < count; i++) {
+        const idx = i * 3;
+        if (mode === 'velocity') {
+          // Heat velocity ramp
+          const speed = Math.sqrt(velocities[idx]**2 + velocities[idx+1]**2 + velocities[idx+2]**2);
+          const heat = Math.min(speed * 0.8, 1.0);
+          col[idx] = 1.0;
+          col[idx + 1] = heat * 0.8;
+          col[idx + 2] = 0.1;
+        } else if (mode === 'depth') {
+          // Z-depth blue-to-white
+          const normZ = (pos[idx + 2] + 150) / 300;
+          col[idx] = normZ;
+          col[idx + 1] = normZ * 0.9;
+          col[idx + 2] = 1.0;
+        } else {
+          // Crisp industrial monochrome + international orange
+          const dist = Math.sqrt(pos[idx]**2 + pos[idx+1]**2 + pos[idx+2]**2);
+          const norm = Math.min(dist / 140, 1.0);
+          if (norm < 0.35) {
+            col[idx] = 1.0; col[idx+1] = 0.34; col[idx+2] = 0.13;
+          } else {
+            col[idx] = 0.95; col[idx+1] = 0.95; col[idx+2] = 0.95;
+          }
+        }
+      }
+      particleGeometry.attributes.color.needsUpdate = true;
+      showToast(`Shading Color Mode: ${mode.toUpperCase()}`);
+    }
+
+    function setBlendMode(mode, btn) {
+      document.querySelectorAll('.blend-btn').forEach(b => {
+        b.classList.remove('active', 'bg-line', 'text-textpri', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('active', 'bg-line', 'text-textpri', 'border-linehover');
+      btn.classList.remove('text-textsec');
+      if (particleMaterial) {
+        if (mode === 'additive') particleMaterial.blending = THREE.AdditiveBlending;
+        else if (mode === 'multiply') particleMaterial.blending = THREE.MultiplyBlending;
+        else particleMaterial.blending = THREE.NormalBlending;
+        particleMaterial.needsUpdate = true;
+      }
+    }
+
+    function setQRError(lvl, btn) {
+      document.querySelectorAll('.qr-btn').forEach(b => {
+        b.classList.remove('active', 'bg-line', 'text-textpri', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('active', 'bg-line', 'text-textpri', 'border-linehover');
+      btn.classList.remove('text-textsec');
+      showToast(`QR Error Correction Level: ${lvl}`);
+    }
+
+    function snapToScannableView() {
+      // Orthographic scannable front alignment
+      cameraAngle.theta = 0;
+      cameraAngle.phi = Math.PI / 2;
+      cameraAngle.radius = 380;
+      cameraTarget.set(0, 0, 0);
+      updateCameraPosition();
+      applyMorph('qr');
+      showToast('Aligned Camera to Orthogonal QR Scannable Plane');
+    }
+
+    // Viewport HUD Modes
+    function setRenderMode(mode, btn) {
+      document.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.remove('bg-inputbg', 'text-textpri', 'border', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('bg-inputbg', 'text-textpri', 'border', 'border-linehover');
+      btn.classList.remove('text-textsec');
+      params.mode = mode;
+
+      if (mode === 'links') {
+        particleMaterial.size = 2.4;
+      } else if (mode === 'depth') {
+        setColorMode('depth');
+      } else {
+        particleMaterial.size = params.pointSize;
+      }
+      showToast(`Render Mode: ${mode.toUpperCase()}`);
+    }
+
+    function resetCamera(view) {
+      if (view === 'front') {
+        cameraAngle.theta = 0;
+        cameraAngle.phi = Math.PI / 2;
+      } else if (view === 'top') {
+        cameraAngle.theta = 0;
+        cameraAngle.phi = 0.05;
+      } else {
+        cameraAngle.theta = 0.7;
+        cameraAngle.phi = 1.1;
+      }
+      cameraAngle.radius = 450;
+      cameraTarget.set(0, 0, 0);
+      updateCameraPosition();
+    }
+
+    function toggleGrid(btn) {
+      const grid = document.getElementById('gridOverlay');
+      if (grid.style.display === 'none') {
+        grid.style.display = 'block';
+        btn.classList.add('border-line');
+        btn.classList.remove('border-accent');
+      } else {
+        grid.style.display = 'none';
+        btn.classList.add('border-accent');
+      }
+    }
+
+    function resetSimulation() {
+      resetCamera('iso');
+      createParticleCloud(params.currentShape);
+      showToast('Simulation Reset to Base State');
+    }
+
+    function resetAllPhysics() {
+      params.curlFreq = 0.45;
+      params.curlAmp = 1.20;
+      params.gravity = { x: 0.0, y: -0.8, z: 0.2 };
+      params.interactionRadius = 140;
+      params.springStiffness = 0.72;
+      document.getElementById('vecX').value = '0.0';
+      document.getElementById('vecY').value = '-0.8';
+      document.getElementById('vecZ').value = '0.2';
+      showToast('Restored Physics Defaults');
+    }
+
+    // Dock Tabs Switcher
+    function switchDockMode(mode, btn) {
+      document.querySelectorAll('.dock-tab').forEach(b => {
+        b.classList.remove('active', 'bg-inputbg', 'text-textpri', 'border', 'border-linehover');
+        b.classList.add('text-textsec');
+      });
+      btn.classList.add('active', 'bg-inputbg', 'text-textpri', 'border', 'border-linehover');
+      btn.classList.remove('text-textsec');
+
+      const textInput = document.getElementById('dockTextInput');
+      const presetTray = document.getElementById('presetTray');
+
+      if (mode === 'prompt') {
+        textInput.placeholder = "Describe an object, physical scenario, or upload reference...";
+        textInput.value = "Disintegrate into aerodynamic turbulence vortex with warm orange core";
+        presetTray.classList.add('hidden');
+      } else if (mode === 'image') {
+        textInput.placeholder = "Select 2D SVG or PNG to project depth map extrusion...";
+        textInput.value = "depth_map_extrusion_normal_pass.svg";
+        presetTray.classList.add('hidden');
+      } else if (mode === 'qr') {
+        textInput.placeholder = "Input URL, text, or crypto payload to build scannable 3D QR...";
+        textInput.value = "https://particle-studio.creative.engine/scannable-matrix-01";
+        presetTray.classList.add('hidden');
+      } else if (mode === 'preset') {
+        textInput.placeholder = "Select or search procedural primitive geometry...";
+        presetTray.classList.remove('hidden');
+      }
+    }
+
+    function executeGeneration() {
+      const btn = document.getElementById('btnGenerate');
+      btn.innerText = "Synthesizing...";
+      btn.classList.add('opacity-75');
+
+      // Random trigger an expressive morph
+      const shapes = ['sphere', 'helix', 'qr', 'terrain', 'cube'];
+      const nextShape = shapes[Math.floor(Math.random() * shapes.length)];
+
+      setTimeout(() => {
+        applyMorph(nextShape);
+        btn.innerHTML = `<span>Generate</span><span class="font-mono text-[10px] text-textmuted bg-zinc-200 px-1 py-0.2 rounded font-bold">↵</span>`;
+        btn.classList.remove('opacity-75');
+      }, 350);
+    }
+
+    function handleFileUpload(e) {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        document.getElementById('dockTextInput').value = `Loaded asset: ${file.name}`;
+        showToast(`Imported mesh/texture: ${file.name}`);
+        applyMorph('terrain');
+      }
+    }
+
+    function toggleAudioReactive() {
+      const btn = document.getElementById('audioBtn');
+      btn.classList.toggle('text-accent');
+      showToast('Audio Reactivity: Mic Listener Activated (44.1kHz FFT)');
+    }
+
+    // Accordion Toggle
+    function toggleSection(secId) {
+      const sec = document.getElementById(secId);
+      const arrow = document.getElementById('arrow-' + secId);
+      if (sec.classList.contains('hidden')) {
+        sec.classList.remove('hidden');
+        arrow.classList.remove('-rotate-90');
+      } else {
+        sec.classList.add('hidden');
+        arrow.classList.add('-rotate-90');
+      }
+    }
+
+    // Modal & Toast Helpers
+    function openExportModal() {
+      document.getElementById('exportModal').classList.remove('hidden');
+    }
+    function closeExportModal() {
+      document.getElementById('exportModal').classList.add('hidden');
+    }
+    function confirmExport() {
+      closeExportModal();
+      showToast('Export package generated (PLY Point Cloud 250k vertices)');
+    }
+    function showToast(msg) {
+      const toast = document.getElementById('studioToast');
+      document.getElementById('toastMsg').innerText = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2400);
+    }
+    function selectRailItem(item) {
+      showToast(`Switched Rail View: ${item.toUpperCase()}`);
+    }
+
+    // Boot system on load
+    window.addEventListener('DOMContentLoaded', initThree);
+  </script>
+</body>
+</html>

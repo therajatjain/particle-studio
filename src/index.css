@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #09090b;
+    color: #f4f4f5;
+    font-family: var(--font-sans);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Custom hairline scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0e0e11;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Precision CAD range input styling */
+input[type="range"].studio-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #222226;
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"].studio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 12px;
+  border-radius: 2px;
+  background: #f4f4f5;
+  border: 1px solid #09090b;
+  cursor: ew-resize;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+input[type="range"].studio-range::-webkit-slider-thumb:hover {
+  background: #ff5722;
+  transform: scale(1.15);
+}
+
+input[type="range"].studio-range:focus-visible {
+  outline: 1px solid #ff5722;
+  outline-offset: 2px;
+}
+
+/* Hide number input spinners for clean CAD numeric scrubbers */
+input[type="number"].no-spinner::-webkit-inner-spin-button,
+input[type="number"].no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].no-spinner {
+  -moz-appearance: textfield;
+}
